@@ -352,6 +352,64 @@ class Flags(unittest.TestCase):
             self.assertIsNone(feed["sessions"][0]["flag"])
             self.assertEqual(flagstore.load(flags_path), {})
 
+    def test_codex_flag_survives_live_chatter_and_clears_after_ended_then_live(self):
+        flagged_at = dt.datetime(2026, 9, 2, 12, 0, tzinfo=dt.timezone.utc)
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = os.path.join(tmp, "projects")
+            os.makedirs(projects)
+            day = os.path.join(tmp, "codex", "2026", "09", "03")
+            os.makedirs(day)
+            rollout = os.path.join(day, "rollout-2026-09-03T10-00-00-cdx.jsonl")
+            write_jsonl(rollout, [
+                {"type": "session_meta", "payload": {"id": "cdx", "cwd": "/Users/example/dev/proj", "originator": "codex-tui"}},
+                {"type": "response_item", "timestamp": "2026-09-02T11:00:00Z",
+                 "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]}},
+                {"type": "response_item", "timestamp": "2026-09-02T12:00:30Z",   # Codex's own "bookmarked" reply
+                 "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Session bookmarked."}]}},
+            ])
+            flags_path = os.path.join(tmp, "flags.json")
+            flagstore.add("cdx", "", path=flags_path, now=flagged_at)
+            codex = {"sessions_dir": os.path.join(tmp, "codex"), "imported": set()}
+
+            def feed(live, now):
+                return sf.build_feed(now, CUTOFF, {}, {}, {}, projects_dir=projects, flags_path=flags_path,
+                                     codex_kwargs=dict(codex, open_rollouts={os.path.realpath(rollout)} if live else set()))
+
+            t0 = flagged_at + dt.timedelta(minutes=1)
+            # Live, with activity after the flag (the confirmation itself): flag stays.
+            self.assertIsNotNone(feed(True, t0)["sessions"][0]["flag"])
+            self.assertNotIn("seen_ended_at", flagstore.load(flags_path)["cdx"])
+            # Session ended: flag stays, and the feed notes it has seen the session ended.
+            self.assertIsNotNone(feed(False, t0 + dt.timedelta(hours=1))["sessions"][0]["flag"])
+            self.assertIn("seen_ended_at", flagstore.load(flags_path)["cdx"])
+            # Live again but no new activity yet: stays.
+            self.assertIsNotNone(feed(True, t0 + dt.timedelta(hours=2))["sessions"][0]["flag"])
+            # New activity after it was seen ended: resumed, flag clears.
+            write_jsonl(rollout, [{"type": "response_item", "timestamp": "2026-09-02T15:00:00Z",
+                                   "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "back"}]}}], mode="a")
+            self.assertIsNone(feed(True, t0 + dt.timedelta(hours=3))["sessions"][0]["flag"])
+            self.assertEqual(flagstore.load(flags_path), {})
+
+    def test_codex_title_skips_injected_blocks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            day = os.path.join(tmp, "codex", "2026", "09", "03")
+            os.makedirs(day)
+            write_jsonl(os.path.join(day, "rollout-2026-09-03T10-00-00-cdx.jsonl"), [
+                {"type": "session_meta", "payload": {"id": "cdx", "cwd": "/x", "originator": "Codex Desktop"}},
+                {"type": "response_item", "timestamp": "2026-09-03T11:00:00Z", "payload": {"type": "message", "role": "user", "content": [
+                    {"type": "input_text", "text": "<recommended_plugins> Here is a list"}]}},
+                {"type": "response_item", "timestamp": "2026-09-03T11:00:01Z", "payload": {"type": "message", "role": "user", "content": [
+                    {"type": "input_text", "text": "<environment_context> <cwd>/x</cwd>"}]}},
+                {"type": "response_item", "timestamp": "2026-09-03T11:00:02Z", "payload": {"type": "message", "role": "user", "content": [
+                    {"type": "input_text", "text": "help me with this spreadsheet"}]}},
+                {"type": "response_item", "timestamp": "2026-09-03T11:00:03Z", "payload": {"type": "message", "role": "user", "content": [
+                    {"type": "input_text", "text": "# Files mentioned by the user: x.xlsx"}]}},
+            ])
+            feed = sf.build_feed(NOW, CUTOFF, {}, {}, {}, projects_dir=os.path.join(tmp, "none"), flags_path=NO_FLAGS,
+                                 codex_kwargs={"sessions_dir": os.path.join(tmp, "codex"), "imported": set(), "open_rollouts": set()})
+        self.assertEqual(feed["sessions"][0]["title"], "help me with this spreadsheet")
+        self.assertEqual([t["text"] for t in feed["sessions"][0]["turns"]], ["help me with this spreadsheet"])
+
     def test_custom_title_wins(self):
         with tempfile.TemporaryDirectory() as tmp:
             projects = os.path.join(tmp, "projects", "-Users-example-dev-proj")

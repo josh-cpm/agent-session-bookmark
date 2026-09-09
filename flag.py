@@ -71,6 +71,14 @@ def add(sid, note="", path=FLAGS_PATH, now=None):
     return entry
 
 
+def update(sid, entry, path=FLAGS_PATH):
+    """Replace the stored entry for `sid` (used by the feed to record bookkeeping)."""
+    flags = load(path)
+    if sid in flags:
+        flags[sid] = entry
+        save(flags, path)
+
+
 def remove(sid, path=FLAGS_PATH):
     flags = load(path)
     existed = flags.pop(sid, None) is not None

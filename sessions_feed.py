@@ -44,12 +44,15 @@ CC_PROJECTS = asb_paths.CLAUDE_PROJECTS
 LIVE_DIR = asb_paths.CLAUDE_LIVE
 CACHE_DIR = asb_paths.CACHE_DIR
 CACHE_PATH = os.path.join(CACHE_DIR, "feed-cache.json")
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 
 CODEX_SESSIONS = asb_paths.CODEX_SESSIONS
 CODEX_IMPORTS = asb_paths.CODEX_IMPORTS
 CODEX_NOISE_PREFIXES = uw.NOISE_PREFIXES + (
     "<environment_context>",
+    "<recommended_plugins>",
+    "<skill>",
+    "# Files mentioned by the user:",
     "<uploaded_files>",
     "<claudeai_review_comments>",
     "<permissions instructions>",
@@ -399,7 +402,7 @@ def build_feed(now, cutoff, cache, live, titles, projects_dir=CC_PROJECTS, max_s
     sessions.extend(codex_sessions(now, cutoff, cache, flags=flags, ignore_cwds=ignore_cwds, **codex_kwargs))
     seen.update(p for p in cache if p.startswith(CODEX_SESSIONS) or "/rollout-" in p)
 
-    attach_flags(sessions, flags, flags_path)
+    attach_flags(sessions, flags, flags_path, now=now)
 
     # Drop cache entries for files that no longer exist.
     for path in list(cache):
@@ -411,14 +414,17 @@ def build_feed(now, cutoff, cache, live, titles, projects_dir=CC_PROJECTS, max_s
     return {"generated": now.isoformat(), "sessions": sessions[:max_sessions]}
 
 
-def attach_flags(sessions, flags, flags_path):
+def attach_flags(sessions, flags, flags_path, now=None):
     """Add "flag" to each session; clear flags whose session has been resumed.
 
-    A Claude flag clears once a *new* process (started after the flag) hosts the
-    session: that is what "I came back to it" means. Codex has no per-process
-    record, so its flag clears when the session is live with activity after the
-    flag.
+    "I came back to it" means the session is hosted by a *new* process. Claude
+    Code records each process's start time, so a flag clears once a process
+    started after the flag hosts the session. Codex has no per-process record;
+    its flag clears once the feed has seen the session ended (not live) after the
+    flag and then live again with new activity. Bookmarking from inside a live
+    session therefore never clears itself, however much the session keeps talking.
     """
+    now = now or dt.datetime.now().astimezone()
     for s in sessions:
         entry = flags.get(s["id"])
         s["flag"] = None
@@ -426,13 +432,18 @@ def attach_flags(sessions, flags, flags_path):
             continue
         flagged_at = uw.parse_ts(entry.get("flagged_at"))
         resumed = False
-        if s["live"] and flagged_at:
+        if flagged_at:
             started = s.get("live_started_at")
-            if started:
+            if s["live"] and started:
                 resumed = dt.datetime.fromtimestamp(started / 1000, tz=dt.timezone.utc) > flagged_at
+            elif not s["live"]:
+                if not entry.get("seen_ended_at"):
+                    entry["seen_ended_at"] = now.isoformat()
+                    flagstore.update(s["id"], entry, flags_path)
             else:
+                ended = uw.parse_ts(entry.get("seen_ended_at"))
                 last = uw.parse_ts(s["last_ts"])
-                resumed = bool(last and last > flagged_at)
+                resumed = bool(ended and last and last > ended)
         if resumed:
             flagstore.remove(s["id"], flags_path)
             continue
