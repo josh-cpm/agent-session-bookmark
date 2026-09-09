@@ -258,6 +258,31 @@ class Codex(unittest.TestCase):
         self.assertEqual(sorted(r["title"] for r in rows), ["fork of a real codex session", "genuine desktop"])
         self.assertEqual({r["source"] for r in rows}, {"codex-desktop", "codex-cli"})
 
+    def test_import_counts_as_a_session_once_codex_ran_a_turn_in_it(self):
+        imported_id = "aaaaaaaa-0000-0000-0000-000000000011"
+        fork_id = "aaaaaaaa-0000-0000-0000-000000000012"
+        with tempfile.TemporaryDirectory() as tmp:
+            # Imported Claude transcript: every line carries the import instant.
+            # Then the person continued it in Codex: a turn_context line and later turns.
+            self.rollout(tmp, imported_id, [
+                codex_meta(imported_id, originator="Codex Desktop"),
+                codex_msg("user", "original claude prompt", "2026-08-03T11:37:24.346Z"),
+                codex_msg("assistant", "original claude answer", "2026-08-03T11:37:24.347Z"),
+                codex_line("turn_context", {"cwd": "/Users/example/dev/proj"}, "2026-09-03T10:00:00Z"),
+                codex_msg("user", "continue this in codex", "2026-09-03T10:00:01Z"),
+                codex_msg("assistant", "Continuing.", "2026-09-03T10:00:05Z"),
+            ])
+            self.rollout(tmp, fork_id, [
+                codex_meta(fork_id, forked_from_id="claude-session-id-not-a-rollout"),
+                codex_line("turn_context", {"cwd": "/x"}, "2026-09-03T10:00:00Z"),
+                codex_msg("user", "fork continued in codex", "2026-09-03T10:00:03Z"),
+            ])
+            rows = sf.codex_sessions(NOW, CUTOFF, {}, sessions_dir=tmp, imported={imported_id}, open_rollouts=set())
+        self.assertEqual(sorted(r["title"] for r in rows), ["fork continued in codex", "original claude prompt"])
+        continued = next(r for r in rows if r["id"] == imported_id)
+        self.assertEqual(continued["turns"][-1]["text"], "Continuing.")
+        self.assertEqual(continued["source"], "codex-desktop")
+
     def test_live_via_open_file_and_busy_from_events(self):
         sid = "bbbbbbbb-0000-0000-0000-000000000001"
         with tempfile.TemporaryDirectory() as tmp:

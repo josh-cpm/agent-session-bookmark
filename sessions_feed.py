@@ -8,7 +8,7 @@ writes to ~/.claude/sessions/<pid>.json.
 
 Also reads OpenAI Codex sessions from ~/.codex/sessions/**/rollout-*.jsonl.
 Codex Desktop imports Claude transcripts into that store (and forks them), so
-imported/forked/subagent rollouts are skipped. A Codex session counts as live
+imported/forked/subagent rollouts are skipped until Codex has run a turn in them. A Codex session counts as live
 when a running codex process holds its rollout file open (lsof).
 
 Output (stdout, one JSON document):
@@ -44,7 +44,7 @@ CC_PROJECTS = asb_paths.CLAUDE_PROJECTS
 LIVE_DIR = asb_paths.CLAUDE_LIVE
 CACHE_DIR = asb_paths.CACHE_DIR
 CACHE_PATH = os.path.join(CACHE_DIR, "feed-cache.json")
-CACHE_VERSION = 6
+CACHE_VERSION = 7
 
 CODEX_SESSIONS = asb_paths.CODEX_SESSIONS
 CODEX_IMPORTS = asb_paths.CODEX_IMPORTS
@@ -75,6 +75,7 @@ def fresh_state(agent="claude"):
         "turns": [],
         # codex only
         "id": None, "forked_from": None, "parent": None, "originator": None, "busy": False,
+        "codex_turns": 0,   # turn_context lines: Codex itself ran a turn in this rollout
     }
 
 
@@ -184,6 +185,9 @@ def ingest_codex(state, obj):
         state["parent"] = payload.get("parent_thread_id")
         state["originator"] = payload.get("originator")
         return
+    if kind == "turn_context":
+        state["codex_turns"] = state.get("codex_turns", 0) + 1
+        return
     if kind == "event_msg":
         et = payload.get("type")
         if et == "task_started":
@@ -263,9 +267,15 @@ def codex_sessions(now, cutoff, cache, sessions_dir=CODEX_SESSIONS, imported=Non
         state = advance(state, path)
         cache[path] = state
         sid = state["id"] or rollout_id(path)
-        if sid in imported or state["parent"]:
+        if state["parent"]:
             continue
-        if state["forked_from"] and state["forked_from"] not in known_ids:
+        # Codex Desktop imports Claude and Cowork transcripts into this store. An
+        # import is only a copy until Codex runs a turn in it (turn_context lines);
+        # after that the person has continued it in Codex and it is a real session.
+        continued = state.get("codex_turns", 0) > 0
+        if sid in imported and not continued:
+            continue
+        if state["forked_from"] and state["forked_from"] not in known_ids and not continued:
             continue  # forked from a transcript that was never a Codex session: an import
         if state["n_user"] == 0 or not state["last_ts"]:
             continue
