@@ -56,6 +56,14 @@ or hide windows to see it.
 - **CLI**: `agent-session-bookmark current` from a shell inside either agent
   prints the session id and how it was found. Outside an agent it prints an
   error, which is correct.
+- **Handoff**: in a live session of either agent, type `/handoff trying it out`
+  (Claude Code) or `$handoff trying it out` (Codex). The reply is one line plus
+  the brief in a code block, and the same text is on the clipboard. In the
+  panel, expand a live row: a "Hand off" button copies the same brief.
+- **Settings skill**: in a new session of either agent, say "show 3 days in the
+  session panel". The agent should run `agent-session-bookmark config set days 3`
+  and the panel footer should read "last 3 days" within seconds. Put it back
+  with "show 7 days" or `agent-session-bookmark config unset days`.
 
 If `~/.local/bin` is not on the user's PATH, the integrations still work (they
 use the absolute path); only typing `agent-session-bookmark` by hand needs the
@@ -63,12 +71,14 @@ PATH entry. Mention it, do not edit shell profiles unasked.
 
 ## 4. Optional configuration
 
-Ask whether the user wants any of these; if not, skip.
+Ask whether the user wants any of these; if not, skip. All settings are changed
+with `agent-session-bookmark config set <key> <value>`; `config keys` lists them
+and `config show` prints the effective values. The panel applies changes on its
+own within a second or two.
 
-- Hide sessions run by automation: create
-  `~/Library/Application Support/Agent Session Bookmark/config.json` with
-  `{"ignore_cwds": ["~/path/to/automation"]}`.
-- Change the window mode (desktop, floating, normal) from the panel's `⋯` menu.
+- Hide sessions run by automation: `agent-session-bookmark config add ignore_cwds ~/path/to/automation`.
+- Window mode: `agent-session-bookmark config set window floating` (or `desktop`, `normal`).
+- Range: `agent-session-bookmark config set days 14`.
 - Avoid the Codex approval prompt for `$bookmark`: in `~/.codex/config.toml`,
   add the bookmark store to the writable roots of the workspace-write sandbox
   (`[sandbox_workspace_write] writable_roots = ["/Users/<name>/Library/Application Support/Agent Session Bookmark"]`).

@@ -440,6 +440,16 @@ class LiveSessions(unittest.TestCase):
 
 
 
+class Range(unittest.TestCase):
+    def test_feed_reports_the_range_in_days(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = sf.build_feed(NOW, NOW - dt.timedelta(days=3), {}, {}, {}, projects_dir=tmp,
+                                 codex_kwargs=NO_CODEX, flags_path=NO_FLAGS)
+            self.assertEqual(feed["days"], 3)
+            self.assertEqual(sf.build_feed(NOW, CUTOFF, {}, {}, {}, projects_dir=tmp, codex_kwargs=NO_CODEX,
+                                           flags_path=NO_FLAGS)["days"], 7)
+
+
 class IgnoreList(unittest.TestCase):
     def test_sessions_in_ignored_cwds_are_hidden(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -4,7 +4,10 @@ A small native macOS desktop panel that lists your recent **Claude Code** and
 **Codex** sessions, shows which are live right now, previews the last few turns,
 and copies a resume command for any ended session. Bookmark a session you want
 to come back to after a reboot, from the panel or from inside the session itself
-with `/bookmark` (Claude Code) or `$bookmark` (Codex).
+with `/bookmark` (Claude Code) or `$bookmark` (Codex). Hand a live session to
+another agent with `/handoff` (or `$handoff`), or the "Hand off" button on the
+panel: it writes a paste-ready brief that starts "I want you to resume the
+session found at …".
 
 No third-party dependencies: a SwiftUI app compiled with the Xcode Command Line
 Tools plus a stdlib-only Python feed. Everything is read from the transcript
@@ -44,52 +47,67 @@ cd agent-session-bookmark
 | The panel | `/Applications/Agent Session Bookmark.app`, started at login by a LaunchAgent (`dev.agent-session-bookmark`) |
 | `/bookmark [note]` in Claude Code | `~/.claude/commands/bookmark.md` |
 | `$bookmark [note]` in Codex | `~/.codex/skills/bookmark/SKILL.md` (Codex has no user-defined `/` commands; `$name` is how it invokes a skill) |
-| CLI | `~/.local/bin/agent-session-bookmark` (`add --current [note]`, `add <id> [note]`, `remove <id>`, `list`, `current`, `feed`, `open`) |
+| `/handoff [note]` in Claude Code, `$handoff [note]` in Codex | `~/.claude/commands/handoff.md`, `~/.codex/skills/handoff/SKILL.md` |
+| Settings skill for both agents | `~/.claude/skills/agent-session-bookmark/SKILL.md` and `~/.codex/skills/agent-session-bookmark/SKILL.md`: ask either agent to change any panel setting |
+| CLI | `~/.local/bin/agent-session-bookmark` (`add --current [note]`, `add <id> [note]`, `remove <id>`, `list`, `current`, `feed`, `config …`, `handoff …`, `open`) |
 | Bookmarks and config | `~/Library/Application Support/Agent Session Bookmark/` |
 | Logs | `~/Library/Logs/Agent Session Bookmark/` |
 
 ## Using the panel
 
-- One row per session from the last 7 days, live sessions first, then newest
-  first: title, project folder, time of the last message. Codex rows carry a
-  teal "Codex" tag.
+- One row per session from the last 7 days (see Settings to change the range),
+  live sessions first, then newest first: title, project folder, time of the
+  last message. When the list mixes Claude Code and Codex sessions, every row
+  carries a small agent tag (Claude in terracotta, Codex in teal); when you use
+  only one agent, no tags are shown.
 - Status dot: **green** = live and idle (waiting for you), **orange** = live and
   working, **grey** = ended.
 - Click a row to expand it: the last three turns, then either "Copy resume
-  command" (ended sessions) or a live-status line. The copied command is
-  `cd <project> && claude --resume <id>` or `codex resume <id>`; paste it into
-  any terminal.
+  command" (ended sessions) or, for live sessions, a **Hand off** button and a
+  status line. The copied resume command is `cd <project> && claude --resume <id>`
+  or `codex resume <id>`; paste it into any terminal.
+- **Hand off**: for a live session, copies a brief another agent can paste to
+  take over: the transcript path and how to read it, the working folder, the
+  original ask, the last few turns, and a resume command for the same agent.
+  From inside the session, `/handoff [note]` (Claude Code) or `$handoff [note]`
+  (Codex) does the same and includes your note. Paste the brief into a new
+  Claude Code or Codex session and it picks the work up from the transcript.
 - **Return to**: hover a row and click its bookmark icon, or type `/bookmark`
   (Claude Code) or `$bookmark` (Codex) inside the session, optionally with a
   note. Bookmarked sessions sit in a pinned group at the top and stay listed
   however old they get. A Claude bookmark clears itself once you resume the
   session in a new process; a Codex bookmark clears when the session is live
   again with new activity. Click the bookmark icon to clear one by hand.
-- The `⋯` menu (or right-click) switches window mode: **Sit on the desktop**
-  (default, like a widget: above the wallpaper, below other windows), **Float
-  above windows**, or **Normal window**. Position, size, and mode persist.
+- The `⋯` menu (or right-click) changes the range, window mode, and agent tags,
+  and reveals the settings and bookmarks folder. Position and size persist.
 - Quit from the `⋯` menu. Reopen from Launchpad or Spotlight, or with
   `agent-session-bookmark open`.
 
-## Config (optional)
+## Settings
 
-Create `~/Library/Application Support/Agent Session Bookmark/config.json`:
+Every setting lives in one file,
+`~/Library/Application Support/Agent Session Bookmark/config.json`, and the panel
+applies changes within a second or two. Three ways to change them:
 
-```json
-{
-  "ignore_cwds": ["~/dev/scheduled-jobs"],
-  "days": 7,
-  "max_sessions": 60
-}
-```
+- **Ask Claude Code or Codex.** The installer adds a skill to both, so "make the
+  session panel float", "show 14 days in the widget", or "hide my ~/dev/bots
+  sessions from the panel" just work. In Codex you can also invoke it directly
+  with `$agent-session-bookmark`.
+- **The `⋯` menu** on the panel, for the range, window mode, and agent tags.
+- **The CLI**: `agent-session-bookmark config set days 14`, `config show`,
+  `config keys`, `config unset days`, `config add ignore_cwds ~/dev/bots`.
 
-- `ignore_cwds`: hide sessions whose working directory is one of these (for
-  example folders where automation runs agents on your behalf).
-- `days`: how far back the Recent list reaches. Live and bookmarked sessions are
-  always shown.
-- `max_sessions`: cap on rows.
+| Setting | Meaning | Values |
+| --- | --- | --- |
+| `days` | How far back the Recent list reaches. Live and bookmarked sessions are always shown. | 1-365, default 7 |
+| `max_sessions` | Cap on rows. | 1-500, default 60 |
+| `ignore_cwds` | Hide sessions whose working directory is one of these, for example folders where automation runs agents on your behalf. | list of paths, `~` allowed |
+| `window` | **desktop**: above the wallpaper, below other windows, like a widget. **floating**: always on top. **normal**: an ordinary window. | default `desktop` |
+| `agent_tags` | Claude / Codex tags on rows. | `auto` (only when both agents appear), `always`, `never` |
+| `preview_turns` | Turns shown when a row is expanded. | 1-6, default 3 |
 
-The panel picks up changes on its next refresh (within a minute).
+Invalid values are rejected by the CLI with the reason, and a hand-edited
+invalid value falls back to the default rather than breaking the panel.
 
 ## How it works
 
@@ -136,7 +154,8 @@ scripts at a different bookmark store; `ASB_CACHE_DIR` moves the cache.
 | --- | --- |
 | `sessions_feed.py` | Emits the JSON feed the panel renders. |
 | `flag.py` | Bookmark store and current-session resolution. |
-| `transcripts.py`, `asb_paths.py` | Transcript text helpers; paths and config. |
+| `handoff.py` | Builds the handoff brief for a session. |
+| `transcripts.py`, `asb_paths.py`, `asb_config.py` | Transcript text helpers; paths, settings schema and validation; the settings CLI. |
 | `AgentSessionBookmark/` | Swift sources (`Model.swift` feed runner + watcher, `Views.swift` UI, `main.swift` panel) and `Info.plist`. |
 | `integrations/` | Templates the installer renders: the Claude command, the Codex skill, the LaunchAgent, the CLI wrapper. |
 | `build.sh`, `install.sh` | Build the bundle (scripts ship inside it); install, check, remove. |

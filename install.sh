@@ -2,7 +2,8 @@
 # Agent Session Bookmark installer.
 #
 #   ./install.sh            build, install the app, start it at login, and add the
-#                           /bookmark command (Claude Code) and $bookmark skill (Codex)
+#                           /bookmark and /handoff commands (Claude Code), the $bookmark
+#                           and $handoff skills (Codex), and a settings skill for both
 #   ./install.sh --check    report what is present and what is missing; change nothing
 #   ./install.sh --remove   undo everything the installer did (bookmarks are kept)
 #
@@ -39,7 +40,11 @@ CLAUDE_DIR="${ASB_CLAUDE_DIR:-$HOME/.claude}"
 CODEX_DIR="${ASB_CODEX_DIR:-${CODEX_HOME:-$HOME/.codex}}"
 SUPPORT_DIR="${ASB_HOME:-$HOME/Library/Application Support/$APP_NAME}"
 CLAUDE_CMD="$CLAUDE_DIR/commands/bookmark.md"
+CLAUDE_HANDOFF="$CLAUDE_DIR/commands/handoff.md"
+CODEX_HANDOFF="$CODEX_DIR/skills/handoff/SKILL.md"
+CLAUDE_SETTINGS_SKILL="$CLAUDE_DIR/skills/agent-session-bookmark/SKILL.md"
 CODEX_SKILL="$CODEX_DIR/skills/bookmark/SKILL.md"
+CODEX_SETTINGS_SKILL="$CODEX_DIR/skills/agent-session-bookmark/SKILL.md"
 UID_="$(id -u)"
 
 ok()   { print -r -- "  ✓ $1"; }
@@ -75,7 +80,11 @@ check() {
     ok "login item: $PLIST (${state:-not loaded})"
   else note "login item not installed"; fi
   [[ -f "$CLAUDE_CMD" ]] && grep -q "$CLI_NAME" "$CLAUDE_CMD" && ok "Claude Code /bookmark: $CLAUDE_CMD" || note "Claude Code /bookmark not installed"
+  [[ -f "$CLAUDE_HANDOFF" ]] && grep -q "$CLI_NAME" "$CLAUDE_HANDOFF" && ok "Claude Code /handoff: $CLAUDE_HANDOFF" || note "Claude Code /handoff not installed"
+  [[ -f "$CLAUDE_SETTINGS_SKILL" ]] && ok "Claude Code settings skill: $CLAUDE_SETTINGS_SKILL" || note "Claude Code settings skill not installed"
   [[ -f "$CODEX_SKILL" ]] && ok "Codex \$bookmark skill: $CODEX_SKILL" || note "Codex \$bookmark skill not installed"
+  [[ -f "$CODEX_HANDOFF" ]] && ok "Codex \$handoff skill: $CODEX_HANDOFF" || note "Codex \$handoff skill not installed"
+  [[ -f "$CODEX_SETTINGS_SKILL" ]] && ok "Codex settings skill: $CODEX_SETTINGS_SKILL" || note "Codex settings skill not installed"
   [[ -f "$SUPPORT_DIR/flags.json" ]] && ok "bookmarks: $SUPPORT_DIR/flags.json" || note "no bookmarks yet ($SUPPORT_DIR/flags.json)"
   if [[ -f "$LAUNCH_AGENTS/com.josh.session-widget.plist" || -d "$APP_DIR/Session Bookmarker.app" ]]; then
     note "the older 'Session Bookmarker' is installed; install will migrate its bookmarks and retire it"
@@ -90,9 +99,13 @@ remove() {
   quit "$BIN_NAME"
   rm -rf "$APP"
   rm -f "$CLI"
-  if [[ -f "$CLAUDE_CMD" ]] && grep -q "$CLI_NAME" "$CLAUDE_CMD"; then rm -f "$CLAUDE_CMD"; fi
-  if [[ -f "$CODEX_SKILL" ]] && grep -q "$CLI_NAME" "$CODEX_SKILL"; then rm -rf "$(dirname "$CODEX_SKILL")"; fi
-  echo "removed $APP_NAME (app, login item, CLI, /bookmark command, \$bookmark skill)."
+  for cmd in "$CLAUDE_CMD" "$CLAUDE_HANDOFF"; do
+    if [[ -f "$cmd" ]] && grep -q "$CLI_NAME" "$cmd"; then rm -f "$cmd"; fi
+  done
+  for skill in "$CLAUDE_SETTINGS_SKILL" "$CODEX_SKILL" "$CODEX_HANDOFF" "$CODEX_SETTINGS_SKILL"; do
+    if [[ -f "$skill" ]] && grep -q "$CLI_NAME" "$skill"; then rm -rf "$(dirname "$skill")"; fi
+  done
+  echo "removed $APP_NAME (app, login item, CLI, /bookmark command, skills)."
   echo "kept your bookmarks and config in: $SUPPORT_DIR"
 }
 
@@ -175,6 +188,14 @@ install_all() {
     fi
     render "$HERE/integrations/claude-bookmark.md" "$CLAUDE_CMD"
     ok "Claude Code: /bookmark  ($CLAUDE_CMD)"
+    if [[ -f "$CLAUDE_HANDOFF" ]] && ! grep -q "$CLI_NAME" "$CLAUDE_HANDOFF"; then
+      mv "$CLAUDE_HANDOFF" "$CLAUDE_HANDOFF.bak"; note "kept your previous handoff.md as handoff.md.bak"
+    fi
+    render "$HERE/integrations/claude-handoff.md" "$CLAUDE_HANDOFF"
+    ok "Claude Code: /handoff  ($CLAUDE_HANDOFF)"
+    mkdir -p "$(dirname "$CLAUDE_SETTINGS_SKILL")"
+    render "$HERE/integrations/claude-settings-SKILL.md" "$CLAUDE_SETTINGS_SKILL"
+    ok "Claude Code: settings skill  ($CLAUDE_SETTINGS_SKILL)"
   else
     note "Claude Code not found ($CLAUDE_DIR); skipped /bookmark"
   fi
@@ -183,6 +204,12 @@ install_all() {
     mkdir -p "$(dirname "$CODEX_SKILL")"
     render "$HERE/integrations/codex-SKILL.md" "$CODEX_SKILL"
     ok "Codex: \$bookmark  ($CODEX_SKILL)"
+    mkdir -p "$(dirname "$CODEX_HANDOFF")"
+    render "$HERE/integrations/codex-handoff-SKILL.md" "$CODEX_HANDOFF"
+    ok "Codex: \$handoff  ($CODEX_HANDOFF)"
+    mkdir -p "$(dirname "$CODEX_SETTINGS_SKILL")"
+    render "$HERE/integrations/codex-settings-SKILL.md" "$CODEX_SETTINGS_SKILL"
+    ok "Codex: settings skill  ($CODEX_SETTINGS_SKILL)"
   else
     note "Codex not found ($CODEX_DIR); skipped \$bookmark"
   fi
@@ -191,11 +218,18 @@ install_all() {
   echo "verifying…"
   local failed=0
   if [[ "${ASB_NO_LAUNCHCTL:-}" != "1" ]]; then
-    sleep 1
-    if pgrep -x "$BIN_NAME" >/dev/null; then ok "app is running (pid $(pgrep -x "$BIN_NAME" | head -1))"
-    else miss "app is not running; see $LOG_DIR/launchd.err"; failed=1; fi
+    # Give it time to load the feed and receive its first file events; a crash
+    # loop shows up as a changing pid or no process at all.
+    sleep 6
+    local pid1; pid1="$(pgrep -x "$BIN_NAME" | head -1)"
+    sleep 2
+    local pid2; pid2="$(pgrep -x "$BIN_NAME" | head -1)"
+    if [[ -n "$pid1" && "$pid1" == "$pid2" ]]; then ok "app is running (pid $pid1, stable for 8 s)"
+    elif [[ -n "$pid2" ]]; then miss "app is restarting (pid changed $pid1 -> $pid2); check ~/Library/Logs/DiagnosticReports for AgentSessionBookmark-*.ips"; failed=1
+    else miss "app is not running; see $LOG_DIR/launchd.err and ~/Library/Logs/DiagnosticReports"; failed=1; fi
   fi
   if "$CLI" list >/dev/null 2>&1; then ok "CLI works: $CLI list"; else miss "CLI failed: $CLI list"; failed=1; fi
+  if "$CLI" config show >/dev/null 2>&1; then ok "settings work: $CLI config show"; else miss "settings failed: $CLI config show"; failed=1; fi
   if ASB_CACHE_DIR="$(mktemp -d)" "$CLI" feed --no-cache >/dev/null 2>&1; then ok "feed works: $CLI feed"
   else miss "feed failed: run  $CLI feed  to see the error"; failed=1; fi
 
@@ -206,8 +240,9 @@ install_all() {
   echo "  CLI          $CLI"
   echo "  bookmarks    $SUPPORT_DIR/flags.json"
   echo "  config       $SUPPORT_DIR/config.json (optional; see README)"
-  [[ -f "$CLAUDE_CMD" ]] && echo "  Claude Code  type /bookmark [note] inside any session"
-  [[ -f "$CODEX_SKILL" ]] && echo "  Codex        type \$bookmark [note] inside any session"
+  [[ -f "$CLAUDE_CMD" ]] && echo "  Claude Code  /bookmark [note] and /handoff [note] inside any session; ask Claude to change panel settings"
+  [[ -f "$CODEX_SKILL" ]] && echo "  Codex        \$bookmark [note] and \$handoff [note] inside any session; ask Codex to change panel settings"
+  echo "  settings     $CLI config keys"
   echo "  logs         $LOG_DIR"
   echo "  uninstall    $HERE/install.sh --remove"
   return $failed

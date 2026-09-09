@@ -28,7 +28,7 @@ swiftc -O -swift-version 5 \
   "$SRC/Model.swift" "$SRC/Views.swift" "$SRC/main.swift"
 
 cp "$SRC/Info.plist" "$APP/Contents/Info.plist"
-for f in sessions_feed.py flag.py transcripts.py asb_paths.py; do
+for f in sessions_feed.py flag.py transcripts.py asb_paths.py asb_config.py handoff.py; do
   cp "$HERE/$f" "$RES/$f"
 done
 chmod +x "$RES/sessions_feed.py" "$RES/flag.py"

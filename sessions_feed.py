@@ -12,7 +12,7 @@ imported/forked/subagent rollouts are skipped. A Codex session counts as live
 when a running codex process holds its rollout file open (lsof).
 
 Output (stdout, one JSON document):
-  {"generated": "<iso>", "sessions": [
+  {"generated": "<iso>", "days": <range shown>, "config": {<effective settings>}, "sessions": [
      {"id", "title", "cwd", "project", "source", "first_ts", "last_ts",
       "agent": "claude" | "codex", "live": "busy" | "idle" | null, "live_name",
       "turns": [{"role","text","ts"}], "resume_cmd"}, ...]}   # live first, then newest
@@ -353,7 +353,7 @@ def trim(text, limit=TURN_CHARS):
 
 
 def build_feed(now, cutoff, cache, live, titles, projects_dir=CC_PROJECTS, max_sessions=DEFAULT_MAX,
-               codex_kwargs=None, flags_path=flagstore.FLAGS_PATH, ignore_cwds=()):
+               codex_kwargs=None, flags_path=flagstore.FLAGS_PATH, ignore_cwds=(), config=None):
     codex_kwargs = codex_kwargs if codex_kwargs is not None else {}
     ignore_cwds = tuple(p.rstrip("/") for p in ignore_cwds)
     flags = flagstore.load(flags_path)
@@ -411,7 +411,9 @@ def build_feed(now, cutoff, cache, live, titles, projects_dir=CC_PROJECTS, max_s
 
     # Flagged first, then live, then newest first.
     sessions.sort(key=lambda s: (s["flag"] is None, s["live"] is None, -uw.parse_ts(s["last_ts"]).timestamp()))
-    return {"generated": now.isoformat(), "sessions": sessions[:max_sessions]}
+    days = max(1, round((now - cutoff).total_seconds() / 86400))
+    return {"generated": now.isoformat(), "days": days, "config": config or asb_paths.load_config(),
+            "sessions": sessions[:max_sessions]}
 
 
 def attach_flags(sessions, flags, flags_path, now=None):
@@ -468,7 +470,7 @@ def main():
     cutoff = now - dt.timedelta(days=args.days)
     cache = {} if args.no_cache else load_cache()
     feed = build_feed(now, cutoff, cache, live_sessions(), uw.desktop_titles(), max_sessions=args.max,
-                      ignore_cwds=config["ignore_cwds"])
+                      ignore_cwds=config["ignore_cwds"], config=config)
     if not args.no_cache:
         save_cache(cache)
     json.dump(feed, sys.stdout, ensure_ascii=False)
