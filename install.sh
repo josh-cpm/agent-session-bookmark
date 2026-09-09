@@ -86,9 +86,6 @@ check() {
   [[ -f "$CODEX_HANDOFF" ]] && ok "Codex \$handoff skill: $CODEX_HANDOFF" || note "Codex \$handoff skill not installed"
   [[ -f "$CODEX_SETTINGS_SKILL" ]] && ok "Codex settings skill: $CODEX_SETTINGS_SKILL" || note "Codex settings skill not installed"
   [[ -f "$SUPPORT_DIR/flags.json" ]] && ok "bookmarks: $SUPPORT_DIR/flags.json" || note "no bookmarks yet ($SUPPORT_DIR/flags.json)"
-  if [[ -f "$LAUNCH_AGENTS/com.josh.session-widget.plist" || -d "$APP_DIR/Session Bookmarker.app" ]]; then
-    note "the older 'Session Bookmarker' is installed; install will migrate its bookmarks and retire it"
-  fi
   return $problems
 }
 
@@ -107,46 +104,6 @@ remove() {
   done
   echo "removed $APP_NAME (app, login item, CLI, /bookmark command, skills)."
   echo "kept your bookmarks and config in: $SUPPORT_DIR"
-}
-
-# ------------------------------------------------------------------ migrate
-# Retire the earlier single-machine version ("Session Bookmarker") if present.
-migrate_session_bookmarker() {
-  local old_label=com.josh.session-widget
-  local old_plist="$LAUNCH_AGENTS/$old_label.plist"
-  local old_app="$APP_DIR/Session Bookmarker.app"
-  [[ -f "$old_plist" || -d "$old_app" ]] || return 0
-  echo "migrating from Session Bookmarker…"
-  if [[ -f "$old_plist" ]]; then
-    local old_dir
-    old_dir="$(awk '/StandardOutPath/{getline; gsub(/<\/?string>|^[ \t]+/, ""); print}' "$old_plist" | xargs -I{} dirname {} | xargs -I{} dirname {})"
-    if [[ -n "$old_dir" && -f "$old_dir/state/flags.json" ]]; then
-      mkdir -p "$SUPPORT_DIR"
-      /usr/bin/python3 - "$old_dir/state/flags.json" "$SUPPORT_DIR/flags.json" <<'EOF'
-import json, sys
-src, dst = sys.argv[1], sys.argv[2]
-old = json.load(open(src))
-try:
-    new = json.load(open(dst))
-except (OSError, ValueError):
-    new = {}
-added = [k for k in old if k not in new]
-for k in added:
-    new[k] = old[k]
-json.dump(new, open(dst, "w"), indent=2, sort_keys=True)
-print(f"  · imported {len(added)} bookmark(s) from {src}")
-EOF
-    fi
-    lctl bootout "gui/$UID_/$old_label" 2>/dev/null || true
-    rm -f "$old_plist"
-    note "removed login item $old_label"
-  fi
-  quit SessionBookmarker
-  if [[ -d "$old_app" ]]; then
-    mkdir -p "$HOME/.Trash"
-    mv "$old_app" "$HOME/.Trash/Session Bookmarker $(date +%H%M%S).app"
-    note "moved '$old_app' to the Trash"
-  fi
 }
 
 # ------------------------------------------------------------------ install
@@ -172,8 +129,6 @@ install_all() {
   render "$HERE/integrations/agent-session-bookmark.sh" "$CLI"
   chmod +x "$CLI"
   ok "CLI: $CLI"
-
-  migrate_session_bookmarker
 
   render "$HERE/integrations/launchd.plist" "$PLIST"
   lctl bootout "gui/$UID_/$LABEL" 2>/dev/null || true

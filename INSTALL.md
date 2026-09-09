@@ -21,9 +21,6 @@ Lines marked `·` are informational. "no Claude Code data" or "no Codex data"
 only means that agent has not been used on this Mac yet; the integration is still
 installed if the agent's home folder exists.
 
-If the check mentions the older "Session Bookmarker", the installer will import
-its bookmarks, remove its login item, and move its app to the Trash.
-
 ## 2. Install
 
 ```sh
