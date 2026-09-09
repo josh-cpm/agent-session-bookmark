@@ -29,7 +29,7 @@ result. It can also adjust the optional config for you.
 ### By hand
 
 ```sh
-git clone REPO_URL_HERE agent-session-bookmark
+git clone https://github.com/josh-cpm/agent-session-bookmark.git agent-session-bookmark
 cd agent-session-bookmark
 ./install.sh --check     # what is present, what is missing; changes nothing
 ./install.sh             # build, install, start at login, add /bookmark and $bookmark
