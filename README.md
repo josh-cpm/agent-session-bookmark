@@ -16,7 +16,7 @@ files the agents already keep on disk. Nothing leaves your Mac.
 ## Install
 
 Requirements: macOS 14 or newer, the Xcode Command Line Tools
-(`xcode-select --install`, which provides `swiftc` and `/usr/bin/python3`), and
+(`xcode-select --install`, which provides `swiftc` and a Python 3), and
 Claude Code and/or Codex installed for the user.
 
 ### With Claude Code or Codex doing the install
@@ -171,3 +171,11 @@ scripts at a different bookmark store; `ASB_CACHE_DIR` moves the cache.
   session, because it writes outside the workspace. Approving is expected.
 - No signed binary is distributed. Clone and build; the Command Line Tools
   compile it in a few seconds.
+- macOS ships no Python of its own, and `/usr/bin/python3` is a stub that
+  refuses to run until the active toolchain's licence is accepted, so
+  installing Xcode can stop it working. The panel and the CLI both pick the
+  first interpreter that actually runs, preferring Homebrew and the toolchain
+  frameworks over the stub, and the footer says `stale` when the feed has
+  stopped answering. `ASB_PYTHON=/full/path/to/python3` overrides the choice;
+  it must be an absolute path. `./install.sh --check` prints which one was
+  picked.

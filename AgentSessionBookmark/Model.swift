@@ -111,16 +111,40 @@ struct Feed: Codable {
 /// toolchain's licence has been accepted. Installing Xcode is enough to switch
 /// the active toolchain and break it, which silently kills the feed. Prefer a
 /// real interpreter; keep the stub only as a last resort.
+///
+/// The toolchain paths below are the real framework binaries the stub forwards
+/// to, so they keep working while the licence gate is up. Keep this list in
+/// step with `integrations/agent-session-bookmark.sh` and `install.sh`:
+/// `test_interpreter_candidates.py` fails if the three drift apart.
+let pythonCandidates = [
+    "/opt/homebrew/bin/python3",
+    "/usr/local/bin/python3",
+    "/Library/Developer/CommandLineTools/usr/bin/python3",
+    "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+    "/usr/bin/python3",
+]
+
 let pythonExecutable: String = {
-    let env = ProcessInfo.processInfo.environment["ASB_PYTHON"]
-    let candidates = [
-        env,
-        "/opt/homebrew/bin/python3",
-        "/usr/local/bin/python3",
-        "/Library/Developer/CommandLineTools/usr/bin/python3",
-        "/usr/bin/python3",
-    ].compactMap { $0 }
-    return candidates.first(where: pythonRuns) ?? "/usr/bin/python3"
+    // ASB_PYTHON must be an absolute path, as it is in the shell wrapper: a
+    // bare command name would work there and be silently ignored here.
+    if let override = ProcessInfo.processInfo.environment["ASB_PYTHON"], !override.isEmpty {
+        if !override.hasPrefix("/") {
+            logLine("ASB_PYTHON=\(override) ignored: give an absolute path")
+        } else if pythonRuns(override) {
+            logLine("python: \(override) (ASB_PYTHON)")
+            return override
+        } else {
+            logLine("ASB_PYTHON=\(override) ignored: it did not run")
+        }
+    }
+    if let found = pythonCandidates.first(where: pythonRuns) {
+        logLine("python: \(found)")
+        return found
+    }
+    // Nothing ran. Returning the stub makes the next feed run fail with the
+    // toolchain's own message, which the panel shows, rather than hiding it.
+    logLine("python: no working interpreter; falling back to /usr/bin/python3")
+    return "/usr/bin/python3"
 }()
 
 /// A candidate counts only if it actually runs: the stub exists and is
@@ -130,11 +154,74 @@ private func pythonRuns(_ path: String) -> Bool {
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: path)
     proc.arguments = ["-c", ""]
-    proc.standardOutput = FileHandle.nullDevice
-    proc.standardError = FileHandle.nullDevice
-    do { try proc.run() } catch { return false }
-    proc.waitUntilExit()
-    return proc.terminationStatus == 0
+    if case .exited(let status, _, _) = runBounded(proc, timeout: probeTimeout, wantOutput: false) {
+        return status == 0
+    }
+    return false
+}
+
+/// How long a candidate gets to prove it runs. The stub can block on an
+/// install prompt and a network-mounted interpreter can stall, and either one
+/// used to wedge the panel on its loading spinner for good.
+private let probeTimeout: TimeInterval = 5
+/// How long a script gets. A cold parse of a few hundred transcripts takes
+/// well under a second, so this only ever catches something genuinely stuck.
+private let scriptTimeout: TimeInterval = 60
+
+enum ProcOutcome {
+    case exited(status: Int32, out: Data, err: Data)
+    case timedOut
+    case failedToStart(Error)
+}
+
+/// Runs `proc` to completion, or kills it once `timeout` has passed, and never
+/// blocks forever. Nothing here may use `waitUntilExit` or a blocking pipe
+/// read: both of those are unbounded, and a single stuck child is enough to
+/// stop the panel refreshing for the rest of the process's life.
+func runBounded(_ proc: Process, timeout: TimeInterval, wantOutput: Bool) -> ProcOutcome {
+    // Never let a child inherit our stdin: one that reads it would block.
+    proc.standardInput = FileHandle.nullDevice
+    let outPipe = wantOutput ? Pipe() : nil
+    let errPipe = wantOutput ? Pipe() : nil
+    proc.standardOutput = outPipe ?? FileHandle.nullDevice
+    proc.standardError = errPipe ?? FileHandle.nullDevice
+
+    let finished = DispatchSemaphore(value: 0)
+    proc.terminationHandler = { _ in finished.signal() }
+    do { try proc.run() } catch { return .failedToStart(error) }
+
+    // Drain the pipes on their own queues. A child that fills a pipe buffer
+    // blocks until someone reads it, so the reads cannot wait on the exit.
+    let box = OutputBox()
+    let reads = DispatchGroup()
+    if let outPipe {
+        DispatchQueue.global().async(group: reads) {
+            box.out = outPipe.fileHandleForReading.readDataToEndOfFile()
+        }
+    }
+    if let errPipe {
+        DispatchQueue.global().async(group: reads) {
+            box.err = errPipe.fileHandleForReading.readDataToEndOfFile()
+        }
+    }
+
+    if finished.wait(timeout: .now() + timeout) == .timedOut {
+        // SIGKILL, not terminate(): a child ignoring SIGTERM is exactly the
+        // case this guard exists for, and an orphan would outlive the app.
+        kill(proc.processIdentifier, SIGKILL)
+        _ = finished.wait(timeout: .now() + 2)
+        _ = reads.wait(timeout: .now() + 2)
+        return .timedOut
+    }
+    _ = reads.wait(timeout: .now() + 2)
+    return .exited(status: proc.terminationStatus, out: box.out, err: box.err)
+}
+
+/// Holds the drained pipes so the reading queues and the caller touch one
+/// object, handed between them by the dispatch group's barrier.
+final class OutputBox {
+    var out = Data()
+    var err = Data()
 }
 
 // MARK: - Model: runs the Python feed, watches the agents' stores and config.json
@@ -258,16 +345,17 @@ final class FeedModel: ObservableObject {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: pythonExecutable)
         proc.arguments = [script] + args
-        let out = Pipe()
-        proc.standardOutput = out
-        proc.standardError = FileHandle.nullDevice
-        do { try proc.run() } catch { return .failure(error) }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        proc.waitUntilExit()
-        guard proc.terminationStatus == 0 else {
-            return .failure(FeedError.script(status: proc.terminationStatus, stderr: ""))
+        switch runBounded(proc, timeout: scriptTimeout, wantOutput: true) {
+        case .failedToStart(let error):
+            return .failure(error)
+        case .timedOut:
+            return .failure(FeedError.timedOut(seconds: scriptTimeout))
+        case .exited(let status, let out, _):
+            guard status == 0 else {
+                return .failure(FeedError.script(status: status, stderr: ""))
+            }
+            return .success(String(data: out, encoding: .utf8) ?? "")
         }
-        return .success(String(data: data, encoding: .utf8) ?? "")
     }
 
     private func runAndRefresh(script: String, args: [String]) {
@@ -275,10 +363,7 @@ final class FeedModel: ObservableObject {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: pythonExecutable)
             proc.arguments = [script] + args
-            proc.standardOutput = FileHandle.nullDevice
-            proc.standardError = FileHandle.nullDevice
-            try? proc.run()
-            proc.waitUntilExit()
+            _ = runBounded(proc, timeout: scriptTimeout, wantOutput: false)
             await MainActor.run { self.refresh() }
         }
     }
@@ -287,25 +372,21 @@ final class FeedModel: ObservableObject {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: pythonExecutable)
         proc.arguments = [script] + args
-        let out = Pipe(), err = Pipe()
-        proc.standardOutput = out
-        proc.standardError = err
-        do {
-            try proc.run()
-        } catch {
+        switch runBounded(proc, timeout: scriptTimeout, wantOutput: true) {
+        case .failedToStart(let error):
             return .failure(error)
-        }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        let errData = err.fileHandleForReading.readDataToEndOfFile()
-        proc.waitUntilExit()
-        guard proc.terminationStatus == 0 else {
-            let msg = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return .failure(FeedError.script(status: proc.terminationStatus, stderr: msg))
-        }
-        do {
-            return .success(try JSONDecoder().decode(T.self, from: data))
-        } catch {
-            return .failure(error)
+        case .timedOut:
+            return .failure(FeedError.timedOut(seconds: scriptTimeout))
+        case .exited(let status, let out, let err):
+            guard status == 0 else {
+                let msg = String(data: err, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return .failure(FeedError.script(status: status, stderr: msg))
+            }
+            do {
+                return .success(try JSONDecoder().decode(T.self, from: out))
+            } catch {
+                return .failure(error)
+            }
         }
     }
 
@@ -351,11 +432,14 @@ private func fsEventsCallback(_ stream: ConstFSEventStreamRef,
 
 enum FeedError: LocalizedError {
     case script(status: Int32, stderr: String)
+    case timedOut(seconds: TimeInterval)
     var errorDescription: String? {
         switch self {
         case .script(let status, let stderr):
             let tail = stderr.split(separator: "\n").last.map(String.init) ?? ""
             return "feed exited \(status)" + (tail.isEmpty ? "" : ": \(tail)")
+        case .timedOut(let seconds):
+            return "feed did not answer in \(Int(seconds))s and was stopped"
         }
     }
 }

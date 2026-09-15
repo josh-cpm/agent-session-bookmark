@@ -13,9 +13,17 @@ install runbook.
 
 ## Working on it
 
-- Python: stdlib only, must run on `/usr/bin/python3` (3.9). Tests:
+- Python: stdlib only, must run on Python 3.9 (the oldest interpreter the
+  resolver may pick). Do not hardcode `/usr/bin/python3` anywhere: it is a stub
+  that a plain Xcode install can gate. The candidate list lives in three places
+  that cannot import each other (`pythonCandidates` in `Model.swift`,
+  `integrations/agent-session-bookmark.sh`, `install.sh`);
+  `test_interpreter_candidates.py` fails if they drift apart. Tests:
   `python3 -m unittest`. Set `ASB_HOME` and `ASB_CACHE_DIR` to scratch folders
   when running the scripts by hand so you do not touch the user's bookmarks.
+- Never wait on a subprocess without a deadline: use `runBounded` in
+  `Model.swift`. A `waitUntilExit` or a blocking pipe read is unbounded, and one
+  stuck child stops the panel refreshing for the rest of the process's life.
 - Swift: edit `AgentSessionBookmark/*.swift`, then `./build.sh --run`. Verify
   visually with `SW_SNAPSHOT=/tmp/x.png SW_HEIGHT=700 "build/Agent Session Bookmark.app/Contents/MacOS/AgentSessionBookmark"`
   (renders a PNG and quits; no screen-recording permission needed).
