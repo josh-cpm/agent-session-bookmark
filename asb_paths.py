@@ -50,6 +50,11 @@ DEFAULT_CONFIG = {
     # Window behaviour: "desktop" (sits above the wallpaper, below windows, like
     # a widget), "floating" (always on top) or "normal".
     "window": "desktop",
+    # Which monitors show the panel: "one" (a single panel, wherever you last
+    # dragged it) or "all" (one panel per screen, so it is on the desktop of
+    # whichever monitor you look at). Works in every window mode: with "all",
+    # a panel stays on its own monitor rather than following the active Space.
+    "displays": "one",
     # Claude / Codex tags on rows: "auto" (only when both agents appear),
     # "always" or "never".
     "agent_tags": "auto",
@@ -62,11 +67,13 @@ SETTING_HELP = {
     "max_sessions": "maximum rows (1-500)",
     "ignore_cwds": "folders whose sessions are hidden (list of paths, ~ allowed)",
     "window": "desktop | floating | normal",
+    "displays": "one | all (one panel, or one per monitor)",
     "agent_tags": "auto | always | never",
     "preview_turns": "turns shown in an expanded row (1-6)",
 }
 
 WINDOW_MODES = ("desktop", "floating", "normal")
+DISPLAY_MODES = ("one", "all")
 TAG_MODES = ("auto", "always", "never")
 
 
@@ -86,6 +93,10 @@ def validate(key, value):
     if key == "window":
         if value not in WINDOW_MODES:
             raise ValueError(f"window must be one of {', '.join(WINDOW_MODES)}")
+        return value
+    if key == "displays":
+        if value not in DISPLAY_MODES:
+            raise ValueError(f"displays must be one of {', '.join(DISPLAY_MODES)}")
         return value
     if key == "agent_tags":
         if value not in TAG_MODES:

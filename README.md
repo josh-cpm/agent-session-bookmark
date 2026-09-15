@@ -78,8 +78,9 @@ cd agent-session-bookmark
   however old they get. A Claude bookmark clears itself once you resume the
   session in a new process; a Codex bookmark clears when the session is live
   again with new activity. Click the bookmark icon to clear one by hand.
-- The `⋯` menu (or right-click) changes the range, window mode, and agent tags,
-  and reveals the settings and bookmarks folder. Position and size persist.
+- The `⋯` menu (or right-click) changes the range, window mode, how many
+  monitors show the panel, and agent tags, and reveals the settings and
+  bookmarks folder. Position and size persist, per monitor.
 - Quit from the `⋯` menu. Reopen from Launchpad or Spotlight, or with
   `agent-session-bookmark open`.
 
@@ -93,7 +94,7 @@ applies changes within a second or two. Three ways to change them:
   session panel float", "show 14 days in the widget", or "hide my ~/dev/bots
   sessions from the panel" just work. In Codex you can also invoke it directly
   with `$agent-session-bookmark`.
-- **The `⋯` menu** on the panel, for the range, window mode, and agent tags.
+- **The `⋯` menu** on the panel, for the range, window mode, monitors, and agent tags.
 - **The CLI**: `agent-session-bookmark config set days 14`, `config show`,
   `config keys`, `config unset days`, `config add ignore_cwds ~/dev/bots`.
 
@@ -103,6 +104,7 @@ applies changes within a second or two. Three ways to change them:
 | `max_sessions` | Cap on rows. | 1-500, default 60 |
 | `ignore_cwds` | Hide sessions whose working directory is one of these, for example folders where automation runs agents on your behalf. | list of paths, `~` allowed |
 | `window` | **desktop**: above the wallpaper, below other windows, like a widget. **floating**: always on top. **normal**: an ordinary window. | default `desktop` |
+| `displays` | **one**: a single panel, wherever you last dragged it. **all**: one panel per monitor, so the list is on the desktop of whichever screen you look at. | default `one` |
 | `agent_tags` | Claude / Codex tags on rows. | `auto` (only when both agents appear), `always`, `never` |
 | `preview_turns` | Turns shown when a row is expanded. | 1-6, default 3 |
 
@@ -149,6 +151,17 @@ SW_SNAPSHOT=/tmp/panel.png SW_HEIGHT=700 "build/Agent Session Bookmark.app/Conte
 
 Add `SW_EXPAND=<row index>` to open a row first. `ASB_HOME=<dir>` points the
 scripts at a different bookmark store; `ASB_CACHE_DIR` moves the cache.
+
+`SW_PANEL_TRACE=1` logs panel lifetime once a second, which is how the
+multi-monitor behaviour is checked by hand (there are no Swift tests):
+
+```sh
+SW_PANEL_TRACE=1 "build/Agent Session Bookmark.app/Contents/MacOS/AgentSessionBookmark"
+# trace panels=2 windows=2 visible=2 renders=4
+```
+
+`renders` counts list layouts across all panels. It should grow by `panels` on
+each refresh: more than that means a retired panel is still rendering.
 
 | Path | Role |
 | --- | --- |

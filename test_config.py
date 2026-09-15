@@ -29,10 +29,12 @@ class Validate(unittest.TestCase):
 
     def test_enums_and_lists(self):
         self.assertEqual(asb_paths.validate("window", "floating"), "floating")
+        self.assertEqual(asb_paths.validate("displays", "all"), "all")
         self.assertEqual(asb_paths.validate("agent_tags", "never"), "never")
         self.assertEqual(asb_paths.validate("ignore_cwds", "~/a, ~/b ,"), ["~/a", "~/b"])
         self.assertEqual(asb_paths.validate("ignore_cwds", ["~/a"]), ["~/a"])
-        for key, bad in (("window", "sideways"), ("agent_tags", "yes"), ("ignore_cwds", 3), ("nope", 1)):
+        for key, bad in (("window", "sideways"), ("displays", "both"), ("agent_tags", "yes"),
+                         ("ignore_cwds", 3), ("nope", 1)):
             with self.assertRaises(ValueError):
                 asb_paths.validate(key, bad)
 
