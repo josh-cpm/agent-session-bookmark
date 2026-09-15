@@ -31,6 +31,10 @@ install runbook.
   `__ASB_LOG_DIR__` placeholders that `install.sh` renders.
 - Do not track row visibility with `onAppear`/`onDisappear` inside the SwiftUI
   list: it caused a layout loop (100% CPU) in an early build.
+- There are no Swift tests. Check panel lifetime with `SW_PANEL_TRACE=1`, which
+  logs `panels`, `windows` and `renders` once a second: `renders` must grow by
+  `panels` per refresh, or a retired panel is still observing the feed. Retiring
+  a panel means `retire()` in `main.swift`, not just dropping the reference.
 
 ## Decisions to keep
 

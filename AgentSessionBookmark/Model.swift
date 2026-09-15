@@ -171,6 +171,26 @@ final class FeedModel: ObservableObject {
 
     init(scriptsDir: String) {
         self.scriptsDir = scriptsDir
+        // Start from what is on disk rather than from the defaults. The first
+        // paint happens before the feed has answered, and disagreeing with
+        // config.json for that second means building a single panel and
+        // replacing it with one per monitor a moment later. The feed remains
+        // the authority: it overwrites this as soon as it returns.
+        self.config = FeedModel.configOnDisk()
+    }
+
+    /// config.json as the panel can read it without a subprocess. Values the
+    /// app understands are trusted; anything else falls back to the default,
+    /// the same way a hand-edited invalid value does in the Python.
+    private static func configOnDisk() -> AppConfig {
+        let path = Bundle.main.supportDir + "/config.json"
+        guard let data = FileManager.default.contents(atPath: path),
+              var c = try? JSONDecoder().decode(AppConfig.self, from: data) else { return AppConfig() }
+        let fallback = AppConfig()
+        if !AppConfig.windowChoices.contains(where: { $0.0 == c.window }) { c.window = fallback.window }
+        if !AppConfig.displayChoices.contains(where: { $0.0 == c.displays }) { c.displays = fallback.displays }
+        if !AppConfig.tagChoices.contains(where: { $0.0 == c.agentTags }) { c.agentTags = fallback.agentTags }
+        return c
     }
 
     /// Agent tags on rows: always, never, or only when the list mixes agents.

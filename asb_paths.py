@@ -52,7 +52,8 @@ DEFAULT_CONFIG = {
     "window": "desktop",
     # Which monitors show the panel: "one" (a single panel, wherever you last
     # dragged it) or "all" (one panel per screen, so it is on the desktop of
-    # whichever monitor you look at). Most useful with window = "desktop".
+    # whichever monitor you look at). Works in every window mode: with "all",
+    # a panel stays on its own monitor rather than following the active Space.
     "displays": "one",
     # Claude / Codex tags on rows: "auto" (only when both agents appear),
     # "always" or "never".
