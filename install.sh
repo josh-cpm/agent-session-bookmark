@@ -59,10 +59,20 @@ check() {
   echo "Requirements"
   local osv; osv="$(sw_vers -productVersion 2>/dev/null || echo 0)"
   if [[ "${osv%%.*}" -ge 14 ]]; then ok "macOS $osv (14 or newer needed)"; else miss "macOS $osv: needs 14 or newer"; problems=1; fi
-  if command -v swiftc >/dev/null 2>&1; then ok "Swift compiler: $(swiftc --version 2>&1 | head -1)"
-  else miss "swiftc not found: run  xcode-select --install  (Xcode Command Line Tools)"; problems=1; fi
-  if [[ -x /usr/bin/python3 ]]; then ok "/usr/bin/python3: $(/usr/bin/python3 --version 2>&1)"
-  else miss "/usr/bin/python3 missing (comes with the Command Line Tools)"; problems=1; fi
+  # Both tools are reached through /usr/bin stubs that exist and are executable
+  # even when they will refuse every invocation, so test that they actually run.
+  if swiftc --version >/dev/null 2>&1; then ok "Swift compiler: $(swiftc --version 2>&1 | head -1)"
+  else miss "no usable swiftc: run  xcode-select --install , or if Xcode is installed  sudo xcodebuild -license accept"; problems=1; fi
+  # Any interpreter the CLI wrapper would accept will do, not /usr/bin/python3
+  # specifically — that one may be a stub the active toolchain has gated.
+  local py=""
+  for c in "${ASB_PYTHON:-}" /opt/homebrew/bin/python3 /usr/local/bin/python3 \
+           /Library/Developer/CommandLineTools/usr/bin/python3 /usr/bin/python3; do
+    [[ -n "$c" ]] || continue
+    if "$c" -c "" >/dev/null 2>&1; then py="$c"; break; fi
+  done
+  if [[ -n "$py" ]]; then ok "python3: $("$py" --version 2>&1) ($py)"
+  else miss "no working python3: if Xcode is installed run  sudo xcodebuild -license accept , else  xcode-select --install"; problems=1; fi
 
   echo "Agent data on this Mac"
   if [[ -d "$CLAUDE_DIR/projects" ]]; then

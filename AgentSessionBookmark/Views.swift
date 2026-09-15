@@ -192,7 +192,12 @@ struct RootView: View {
             }
             Spacer()
             if let error = model.error, !model.sessions.isEmpty {
+                // The rows below are the last good feed, not current ones; say
+                // so in the footer rather than only in a tooltip nobody hovers.
                 Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help(error)
+                Text("stale")
                     .foregroundStyle(.orange)
                     .help(error)
             }

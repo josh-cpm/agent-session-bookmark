@@ -105,6 +105,38 @@ struct Feed: Codable {
     let sessions: [Session]
 }
 
+/// macOS ships no Python of its own. `/usr/bin/python3` is a multi-call stub —
+/// the same inode as `/usr/bin/git` and `/usr/bin/clang` — that forwards to the
+/// toolchain `xcode-select -p` points at, and refuses to run until that
+/// toolchain's licence has been accepted. Installing Xcode is enough to switch
+/// the active toolchain and break it, which silently kills the feed. Prefer a
+/// real interpreter; keep the stub only as a last resort.
+let pythonExecutable: String = {
+    let env = ProcessInfo.processInfo.environment["ASB_PYTHON"]
+    let candidates = [
+        env,
+        "/opt/homebrew/bin/python3",
+        "/usr/local/bin/python3",
+        "/Library/Developer/CommandLineTools/usr/bin/python3",
+        "/usr/bin/python3",
+    ].compactMap { $0 }
+    return candidates.first(where: pythonRuns) ?? "/usr/bin/python3"
+}()
+
+/// A candidate counts only if it actually runs: the stub exists and is
+/// executable even when it will refuse every invocation.
+private func pythonRuns(_ path: String) -> Bool {
+    guard FileManager.default.isExecutableFile(atPath: path) else { return false }
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: path)
+    proc.arguments = ["-c", ""]
+    proc.standardOutput = FileHandle.nullDevice
+    proc.standardError = FileHandle.nullDevice
+    do { try proc.run() } catch { return false }
+    proc.waitUntilExit()
+    return proc.terminationStatus == 0
+}
+
 // MARK: - Model: runs the Python feed, watches the agents' stores and config.json
 
 @MainActor
@@ -180,10 +212,13 @@ final class FeedModel: ObservableObject {
                     self.sessions = feed.sessions
                     if let c = feed.config { self.config = c }
                     self.error = nil
+                    // Only a refresh that returned data counts as a refresh.
+                    // Stamping this on failure too made the footer report the
+                    // rows as current while the feed had been dead for hours.
+                    self.lastRefresh = Date()
                 case .failure(let err):
                     self.error = err.localizedDescription
                 }
-                self.lastRefresh = Date()
                 self.now = Date()
             }
         }
@@ -221,7 +256,7 @@ final class FeedModel: ObservableObject {
 
     nonisolated private static func runText(script: String, args: [String]) -> Result<String, Error> {
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        proc.executableURL = URL(fileURLWithPath: pythonExecutable)
         proc.arguments = [script] + args
         let out = Pipe()
         proc.standardOutput = out
@@ -238,7 +273,7 @@ final class FeedModel: ObservableObject {
     private func runAndRefresh(script: String, args: [String]) {
         Task.detached(priority: .userInitiated) {
             let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+            proc.executableURL = URL(fileURLWithPath: pythonExecutable)
             proc.arguments = [script] + args
             proc.standardOutput = FileHandle.nullDevice
             proc.standardError = FileHandle.nullDevice
@@ -250,7 +285,7 @@ final class FeedModel: ObservableObject {
 
     nonisolated private static func run<T: Decodable>(script: String, args: [String], decode: T.Type) -> Result<T, Error> {
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        proc.executableURL = URL(fileURLWithPath: pythonExecutable)
         proc.arguments = [script] + args
         let out = Pipe(), err = Pipe()
         proc.standardOutput = out
