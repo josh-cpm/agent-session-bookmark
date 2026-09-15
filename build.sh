@@ -12,16 +12,31 @@ APP="$OUT/Agent Session Bookmark.app"
 BIN="$APP/Contents/MacOS/AgentSessionBookmark"
 RES="$APP/Contents/Resources"
 
-if ! command -v swiftc >/dev/null 2>&1; then
-  echo "swiftc not found. Install the Xcode Command Line Tools: xcode-select --install" >&2
+# swiftc on PATH is the same multi-call stub as /usr/bin/python3: it forwards to
+# whichever toolchain `xcode-select -p` names and refuses to run until that
+# toolchain's licence is accepted, so installing Xcode can break a build that
+# worked yesterday. Pick the first candidate that actually runs.
+SWIFTC=""
+for c in "${SWIFTC_BIN:-}" swiftc \
+  /Library/Developer/CommandLineTools/usr/bin/swiftc \
+  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc; do
+  [[ -n "$c" ]] || continue
+  if "$c" --version >/dev/null 2>&1; then SWIFTC="$c"; break; fi
+done
+if [[ -z "$SWIFTC" ]]; then
+  echo "No usable swiftc." >&2
+  echo "If you just installed Xcode, accept its licence: sudo xcodebuild -license accept" >&2
+  echo "Otherwise install the Command Line Tools: xcode-select --install" >&2
   exit 1
 fi
+SWIFT="${SWIFTC%swiftc}swift"
+[[ -x "$SWIFT" ]] || SWIFT="swift"
 
 arch="$(uname -m)"   # arm64 or x86_64
 mkdir -p "$APP/Contents/MacOS" "$RES"
 
 echo "compiling ($arch)…"
-swiftc -O -swift-version 5 \
+"$SWIFTC" -O -swift-version 5 \
   -target "$arch-apple-macos14.0" \
   -framework AppKit -framework SwiftUI -framework CoreServices \
   -o "$BIN" \
@@ -35,7 +50,7 @@ chmod +x "$RES/sessions_feed.py" "$RES/flag.py"
 
 if [[ ! -f "$OUT/AppIcon.icns" ]]; then
   echo "rendering icon…"
-  swift "$HERE/make_icon.swift" "$OUT/AppIcon.iconset" && iconutil -c icns "$OUT/AppIcon.iconset" -o "$OUT/AppIcon.icns"
+  "$SWIFT" "$HERE/make_icon.swift" "$OUT/AppIcon.iconset" && iconutil -c icns "$OUT/AppIcon.iconset" -o "$OUT/AppIcon.icns"
 fi
 cp "$OUT/AppIcon.icns" "$RES/AppIcon.icns"
 echo -n "APPL????" > "$APP/Contents/PkgInfo"

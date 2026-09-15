@@ -191,12 +191,22 @@ struct RootView: View {
                 Text("last \(rangeLabel)")
             }
             Spacer()
+            // The rows below may be the last good feed rather than current
+            // ones. Say so in the footer rather than only in a tooltip nobody
+            // hovers, by relabelling the timestamp instead of adding to it:
+            // at the 300pt minimum width there is no room for both words.
             if let error = model.error, !model.sessions.isEmpty {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                     .help(error)
-            }
-            if let t = model.lastRefresh {
+                if let t = model.lastRefresh {
+                    Text("stale · \(t, style: .time)")
+                        .foregroundStyle(.orange)
+                        .help(error)
+                } else {
+                    Text("stale").foregroundStyle(.orange).help(error)
+                }
+            } else if let t = model.lastRefresh {
                 Text("updated \(t, style: .time)")
             }
         }
