@@ -232,6 +232,9 @@ struct RootView: View {
         Picker("Window", selection: binding(\.window, key: "window")) {
             ForEach(AppConfig.windowChoices, id: \.0) { Text($0.1).tag($0.0) }
         }
+        Picker("Show on", selection: binding(\.displays, key: "displays")) {
+            ForEach(AppConfig.displayChoices, id: \.0) { Text($0.1).tag($0.0) }
+        }
         Picker("Agent tags", selection: binding(\.agentTags, key: "agent_tags")) {
             ForEach(AppConfig.tagChoices, id: \.0) { Text($0.1).tag($0.0) }
         }

@@ -66,11 +66,12 @@ struct AppConfig: Codable, Hashable {
     var maxSessions: Int = 60
     var ignoreCwds: [String] = []
     var window: String = "desktop"       // desktop | floating | normal
+    var displays: String = "one"         // one | all (one panel, or one per monitor)
     var agentTags: String = "auto"       // auto | always | never
     var previewTurns: Int = 3
 
     enum CodingKeys: String, CodingKey {
-        case days, window
+        case days, window, displays
         case maxSessions = "max_sessions"
         case ignoreCwds = "ignore_cwds"
         case agentTags = "agent_tags"
@@ -85,6 +86,7 @@ struct AppConfig: Codable, Hashable {
         maxSessions = try c.decodeIfPresent(Int.self, forKey: .maxSessions) ?? 60
         ignoreCwds = try c.decodeIfPresent([String].self, forKey: .ignoreCwds) ?? []
         window = try c.decodeIfPresent(String.self, forKey: .window) ?? "desktop"
+        displays = try c.decodeIfPresent(String.self, forKey: .displays) ?? "one"
         agentTags = try c.decodeIfPresent(String.self, forKey: .agentTags) ?? "auto"
         previewTurns = try c.decodeIfPresent(Int.self, forKey: .previewTurns) ?? 3
     }
@@ -92,6 +94,9 @@ struct AppConfig: Codable, Hashable {
     static let dayChoices = [1, 3, 7, 14, 30]
     static let windowChoices: [(String, String)] = [
         ("desktop", "Sit on the desktop"), ("floating", "Float above windows"), ("normal", "Normal window"),
+    ]
+    static let displayChoices: [(String, String)] = [
+        ("one", "One monitor"), ("all", "Every monitor"),
     ]
     static let tagChoices: [(String, String)] = [
         ("auto", "When both agents appear"), ("always", "Always"), ("never", "Never"),

@@ -1,6 +1,6 @@
 ---
 name: agent-session-bookmark
-description: Change or inspect Agent Session Bookmark settings (the desktop panel of Claude Code and Codex sessions) - history range in days, row cap, hidden folders, window mode (desktop / floating / normal), agent tags, preview length - and troubleshoot the panel. Use when the user mentions the session panel, session widget, Agent Session Bookmark, or asks to change how many days it shows, make it float, hide a folder's sessions, or asks why it is not showing something.
+description: Change or inspect Agent Session Bookmark settings (the desktop panel of Claude Code and Codex sessions) - history range in days, row cap, hidden folders, window mode (desktop / floating / normal), which monitors it shows on, agent tags, preview length - and troubleshoot the panel. Use when the user mentions the session panel, session widget, Agent Session Bookmark, or asks to change how many days it shows, make it float, show it on every monitor, hide a folder's sessions, or asks why it is not showing something.
 ---
 Agent Session Bookmark is a macOS desktop panel listing recent Claude Code and
 Codex sessions. All of its settings live in one JSON file and are changed with
@@ -20,6 +20,7 @@ Settings (`__ASB_CLI__ config keys` prints this list with defaults):
 | `max_sessions` | maximum rows | 1-500, default 60 |
 | `ignore_cwds` | folders whose sessions are hidden | list of paths, `~` allowed |
 | `window` | how the panel sits | `desktop` (below windows, like a widget), `floating` (always on top), `normal` |
+| `displays` | which monitors show it | `one` (a single panel where you dragged it), `all` (one per monitor) |
 | `agent_tags` | Claude / Codex tags on rows | `auto` (only when both appear), `always`, `never` |
 | `preview_turns` | turns shown when a row is expanded | 1-6, default 3 |
 

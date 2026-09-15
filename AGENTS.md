@@ -13,7 +13,10 @@ install runbook.
 
 ## Working on it
 
-- Python: stdlib only, must run on `/usr/bin/python3` (3.9). Tests:
+- Python: stdlib only, must run on Python 3.9 (the oldest interpreter the
+  resolver may pick). Do not hardcode `/usr/bin/python3` anywhere: it is a stub
+  that a plain Xcode install can gate. See `pythonExecutable` in `Model.swift`
+  and the matching probe in `integrations/agent-session-bookmark.sh`. Tests:
   `python3 -m unittest`. Set `ASB_HOME` and `ASB_CACHE_DIR` to scratch folders
   when running the scripts by hand so you do not touch the user's bookmarks.
 - Swift: edit `AgentSessionBookmark/*.swift`, then `./build.sh --run`. Verify
